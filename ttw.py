@@ -518,7 +518,7 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
             
             if args.test_aug ==True:
                 test_args = copy.deepcopy(args)
-                test_args.majority_vote = True #FIXME: Majority vote has to be switched manually (not fixed in argeparse call) 
+                test_args.majority_vote = False #FIXME: Majority vote has to be switched manually (not fixed in argeparse call) 
                 test_args.double_aug = False
                 test_args.aug = True
                 final_output = test_time_tuning(model, images, optimizer, scaler, test_args)
@@ -590,15 +590,15 @@ if __name__ == '__main__':
     default_tta_steps = 1
     default_print_frq = 10
     default_images_per_class = None
-    default_gpu = 3
+    default_gpu = 0
     default_selection_p = 0.1 #0.1=6. 1.0=64
     default_layer_range = [9, 11]
     default_init_method = 'xavier'
     default_lora_encoder = 'prompt'
-    default_aug = False #simple augmentation
+    default_aug = True #simple augmentation
     default_majority_vote = False #majority vote (with args.aug=True)
     default_double_aug = False #double-step augmentation
-    default_test_aug = True #use augmented samples for inferencing trained model
+    default_test_aug = False #use augmented samples for inferencing trained model
 
     parser = argparse.ArgumentParser(description='Test-time Prompt Tuning')
     parser.add_argument('data', metavar='DIR', nargs="?", default=default_data_root, help='path to dataset root')
