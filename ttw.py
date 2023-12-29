@@ -37,6 +37,7 @@ from data.imagenet_variants import thousand_k_to_200, imagenet_a_mask, imagenet_
 from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel
 from functions import selected_confidient_samples_ours, kl_div_loss, ternary_plot, plot_img
 from functions import save_pil_plot, tensor_to_pil_image
+import copy
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -451,7 +452,9 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
     initial_weights = {name: param.clone() for name, param in model.named_parameters()}
     # For some reason,, only layer 11's weights are being updated
     
+    # init_args = args
     for i, (images, target) in enumerate(val_loader): #FIXME: at one loop, processing one image, i.e., its +63 (augmented) variation in total 
+        # args = init_args
         assert args.gpu is not None
         if isinstance(images, list):
             for k in range(len(images)):
@@ -512,6 +515,13 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
             else:
                 final_output = test_time_tuning(model, images, optimizer, scaler, args)
             #--
+            
+            if args.test_aug ==True:
+                test_args = copy.deepcopy(args)
+                test_args.majority_vote = True #FIXME: Majority vote has to be switched manually (not fixed in argeparse call) 
+                test_args.double_aug = False
+                test_args.aug = True
+                final_output = test_time_tuning(model, images, optimizer, scaler, test_args)
         else:
             pass
 
@@ -572,7 +582,7 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
 
 if __name__ == '__main__':
     default_data_root = '/home/raza.imam/Documents/TPT/datasets/'
-    default_test_sets = 'SUN397' #'A/V/R/K' #flower102/DTD/Pets/UCF101/Caltech101/Aircraft/eurosat/Cars/Food101/SUN397
+    default_test_sets = 'flower102/DTD/Pets/Cars' #'A/V/R/K' #flower102/DTD/Pets/UCF101/Caltech101/Aircraft/eurosat/Cars/Food101/SUN397
     default_arch = 'ViT-B/16' #ViT-B/16 #RN50
     default_bs = 64
     default_ctx_init = 'a_photo_of_a' 
@@ -580,14 +590,15 @@ if __name__ == '__main__':
     default_tta_steps = 1
     default_print_frq = 10
     default_images_per_class = None
-    default_gpu = 5
+    default_gpu = 3
     default_selection_p = 0.1 #0.1=6. 1.0=64
     default_layer_range = [9, 11]
     default_init_method = 'xavier'
     default_lora_encoder = 'prompt'
-    default_aug = True #simple augmentation
-    default_majority_vote = True #majority vote
+    default_aug = False #simple augmentation
+    default_majority_vote = False #majority vote (with args.aug=True)
     default_double_aug = False #double-step augmentation
+    default_test_aug = True #use augmented samples for inferencing trained model
 
     parser = argparse.ArgumentParser(description='Test-time Prompt Tuning')
     parser.add_argument('data', metavar='DIR', nargs="?", default=default_data_root, help='path to dataset root')
@@ -615,6 +626,7 @@ if __name__ == '__main__':
     parser.add_argument('--aug', default=default_aug, choices=[True, False], help='Whether to use simple augmentation or not')
     parser.add_argument('--majority_vote', default=default_majority_vote, choices=[True, False], help='Whether to use majority vote or not during augmentation')
     parser.add_argument('--double_aug', default=default_double_aug, choices=[True, False], help='Whether to use double-step in the augmentation or not')
+    parser.add_argument('--test_aug', default=default_test_aug, choices=[True, False], help='Whether to use augmented sample predictions for inferencing trained model or not')
     
     args = parser.parse_args()
     
