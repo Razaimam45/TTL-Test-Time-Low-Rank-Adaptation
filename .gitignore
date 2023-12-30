@@ -30,3 +30,5 @@ minLoRA
 wandb
 __pycache__
 clip/Notebooks
+DiffTPT
+PromptAlign

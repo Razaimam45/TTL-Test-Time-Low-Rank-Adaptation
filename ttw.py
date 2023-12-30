@@ -619,6 +619,7 @@ if __name__ == '__main__':
     parser.add_argument('--cocoop', action='store_true', default=False, help="use cocoop's output as prompt initialization")
     parser.add_argument('--load', default=None, type=str, help='path to a pre-trained coop/cocoop')
     parser.add_argument('--seed', type=int, default=0) #No modify need
+    
     parser.add_argument('--images_per_class', default=default_images_per_class, type=int, help='Number fo images per class to load (should be <=10)')
     parser.add_argument('--layer_range', nargs=2, type=int, default=default_layer_range, help='inclusive range of layers to include for lora_A and lora_B. Default is [0, 11].')
     parser.add_argument('--init_method', default=default_init_method, choices=['xavier', 'gaussian', 'kaiming', None], help='Initialization method for LoRA weights (None=in_built xavier)')
