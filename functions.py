@@ -610,7 +610,7 @@ def select_confident_samples_cosine(logits, selection_cosine=0.8, selection_self
     logits = torch.cat((logits[0, :].unsqueeze(0), logits_cos), dim=0) #shape=(51,1000)
     batch_entropy = -(logits.softmax(1) * logits.log_softmax(1)).sum(1) #Rest same as select_confident_samples function
     idx = torch.argsort(batch_entropy, descending=False)[:int(batch_entropy.size()[0] * selection_selfentro)]
-    return logits[idx], [idx_cosine, idx], cosine_distan
+    return logits[idx], idx, cosine_distan
 
 def select_confident_samples_cosine_on_inputs(image_list, top=6):
     # tensor_list = [F.to_tensor(image) for image in image_list]

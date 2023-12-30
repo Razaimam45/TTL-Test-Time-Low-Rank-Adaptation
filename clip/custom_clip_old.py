@@ -449,6 +449,25 @@ def get_coop(clip_arch, test_set, device, n_ctx, ctx_init, learned_cls=False):
 
     return model
 
+DOWNLOAD_ROOT='~/.cache/clip'
+def get_clip_ensemble(clip_arch, test_set, templetaes, ensemble, gpu):
+    device = f"cuda:{gpu}" if torch.cuda.is_available() else "cpu"
+    clip_model, _, _ = load(clip_arch, device=device, download_root=DOWNLOAD_ROOT) 
+    
+    if test_set in fewshot_datasets:
+        classnames = eval("{}_classes".format(test_set.lower()))
+    #we are not using bongard dataset
+    elif test_set == 'bongard':
+        if learned_cls:
+            classnames = ['X', 'X']
+        else:
+            classnames = ['True', 'False']
+    #we are here ####
+    else:
+        classnames = imagenet_classes
+    
+    model = MyClip(clip_model= clip_model, class_names= classnames, templetaes= templetaes, ensemble= ensemble, device= device)
+    return model
 
 class MyClip(torch.nn.Module):
     def __init__(self, clip_model, class_names, templetaes, ensemble, device) -> None:

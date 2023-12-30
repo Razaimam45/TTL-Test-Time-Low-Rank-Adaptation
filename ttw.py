@@ -36,7 +36,7 @@ from data.fewshot_datasets import fewshot_datasets
 from data.imagenet_variants import thousand_k_to_200, imagenet_a_mask, imagenet_r_mask, imagenet_v_mask
 from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel
 from functions import selected_confidient_samples_ours, kl_div_loss, ternary_plot, plot_img
-from functions import save_pil_plot, tensor_to_pil_image
+from functions import save_pil_plot, tensor_to_pil_image, select_confident_samples_cosine
 import copy
 
 model_names = sorted(name for name in models.__dict__
@@ -137,7 +137,7 @@ def test_time_tuning(model, inputs, optimizer, scaler, args):
             else:
                 output, selected_idx = select_confident_samples(output, top=args.selection_p)
                 # output, _ , selected_idx, norm = selected_confidient_samples_ours(output, top= 6, reduction= 'sum')
-            
+                # output, selected_idx, batch_entropy = select_confident_samples_cosine(output, selection_cosine=0.5, selection_selfentro=0.25)
             #--
             if args.double_aug == True:
                 global top6_inps
@@ -164,15 +164,16 @@ def test_time_tuning(model, inputs, optimizer, scaler, args):
                 # print("H12 Loss Before Update:", loss.item())
                 # kl_matrix, loss = kl_div_loss(output= output, reduction = 'sum', symmetric= True)
         
-        if args.aug == False: #when not using aug, update the loss/model
-            # Backward pass
-            optimizer.zero_grad() # Zero the gradients
-            scaler.scale(loss).backward() # compute gradient and do SGD step
-            scaler.step(optimizer) # Unscales the gradients of optimizer's assigned params in-place
-            scaler.update() # Update weights
-            # optimizer.zero_grad()
-            # loss.backward()
-            # optimizer.step()
+        if args.ensemble==False:
+            if args.aug == False: #when not using aug, update the loss/model
+                # Backward pass
+                optimizer.zero_grad() # Zero the gradients
+                scaler.scale(loss).backward() # compute gradient and do SGD step
+                scaler.step(optimizer) # Unscales the gradients of optimizer's assigned params in-place
+                scaler.update() # Update weights
+                # optimizer.zero_grad()
+                # loss.backward()
+                # optimizer.step()
         
         # ---
         # inputs = inputs[selected_idx] #FIXME: Now, inputs.shape = torch.Size([6, 3, 224, 224])
@@ -251,8 +252,13 @@ def main_worker(gpu, args):
         pass
     else:
         if args.lora_encoder == 'prompt': 
-            from clip.custom_clip_old import get_coop
-            model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init)
+            from clip.custom_clip_old import get_coop, get_clip_ensemble
+            if args.ensemble == False:
+                model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init)
+            else:
+                from data.imagnet_prompts import imagenet_templates
+                model = get_clip_ensemble(args.arch, args.test_sets, imagenet_templates, args.ensemble, args.gpu)
+                
         else:
             from clip.custom_clip import get_coop
             model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init, layer_range=args.layer_range, init_method=args.init_method, lora_encoder=args.lora_encoder)
@@ -298,36 +304,42 @@ def main_worker(gpu, args):
     if args.cocoop:
         pass
     else:
-        if args.lora_encoder == 'prompt':
-            trainable_param = model.prompt_learner.parameters() #TODO: Defining Optimizer
-            optimizer = torch.optim.AdamW(trainable_param, args.lr)
-        else:
-        # For new CLIP
-            parameters_to_optimize = []
-            if args.lora_encoder == 'text':
-                layers = model.text_encoder.text_model.encoder.layers
-            elif args.lora_encoder == 'image':
-                layers = model.image_encoder.vision_model.encoder.layers
-                
-            for i, layer in enumerate(layers):
-                if args.layer_range[0] <= i <= args.layer_range[1]:
-                    lora_A_params_q = layer.self_attn.q_proj.lora_A.parameters()
-                    lora_B_params_q = layer.self_attn.q_proj.lora_B.parameters()
+        if args.ensemble==False:
+            
+            if args.lora_encoder == 'prompt':
+                trainable_param = model.prompt_learner.parameters() #TODO: Defining Optimizer
+                optimizer = torch.optim.AdamW(trainable_param, args.lr)
+            else:
+            # For new CLIP
+                parameters_to_optimize = []
+                if args.lora_encoder == 'text':
+                    layers = model.text_encoder.text_model.encoder.layers
+                elif args.lora_encoder == 'image':
+                    layers = model.image_encoder.vision_model.encoder.layers
                     
-                    lora_A_params_v = layer.self_attn.v_proj.lora_A.parameters()
-                    lora_B_params_v = layer.self_attn.v_proj.lora_B.parameters()
+                for i, layer in enumerate(layers):
+                    if args.layer_range[0] <= i <= args.layer_range[1]:
+                        lora_A_params_q = layer.self_attn.q_proj.lora_A.parameters()
+                        lora_B_params_q = layer.self_attn.q_proj.lora_B.parameters()
+                        
+                        lora_A_params_v = layer.self_attn.v_proj.lora_A.parameters()
+                        lora_B_params_v = layer.self_attn.v_proj.lora_B.parameters()
 
-                    parameters_to_optimize.extend([
-                        {'params': lora_A_params_q},
-                        {'params': lora_B_params_q},
-                        {'params': lora_A_params_v},
-                        {'params': lora_B_params_v},
-                    ])
+                        parameters_to_optimize.extend([
+                            {'params': lora_A_params_q},
+                            {'params': lora_B_params_q},
+                            {'params': lora_A_params_v},
+                            {'params': lora_B_params_v},
+                        ])
 
-            print('len(parameters_to_optimize)', len(parameters_to_optimize))
-            optimizer = torch.optim.AdamW(parameters_to_optimize, lr=args.lr)
+                print('len(parameters_to_optimize)', len(parameters_to_optimize))
+                optimizer = torch.optim.AdamW(parameters_to_optimize, lr=args.lr)
 
-        optim_state = deepcopy(optimizer.state_dict())
+            optim_state = deepcopy(optimizer.state_dict())
+            
+        elif args.ensemble==True:
+            optimizer = None
+            optim_state = None
 
 # model.text_encoder.text_model.encoder.layers[0].self_attn.v_proj.lora_A.default.weight
 
@@ -388,10 +400,11 @@ def main_worker(gpu, args):
                     classnames = [classnames_all[i] for i in label_mask]
             else:
                 classnames = classnames_all
-        if args.cocoop:
-            pass
-        else:
-            model.reset_classnames(classnames, args.arch)
+        if args.ensemble==False:
+            if args.cocoop:
+                pass
+            else:
+                model.reset_classnames(classnames, args.arch)
 
         global CLASSNAMES
         CLASSNAMES = classnames
@@ -441,12 +454,14 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
     # reset model and switch to evaluate mode
     model.eval()
     # model.train()
-    if not args.cocoop: # no need to reset cocoop because it's fixed
-        with torch.no_grad():
-            if args.lora_encoder == 'prompt':
-                model.reset() #for promptlearner class
-            else:
-                model.LoRA_reset()
+    
+    if args.ensemble==False:
+        if not args.cocoop: # no need to reset cocoop because it's fixed
+            with torch.no_grad():
+                if args.lora_encoder == 'prompt':
+                    model.reset() #for promptlearner class
+                else:
+                    model.LoRA_reset()
     end = time.time()
     
     initial_weights = {name: param.clone() for name, param in model.named_parameters()}
@@ -501,13 +516,16 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
         #---
 
         if not args.cocoop: # no need to reset cocoop because it's fixed
-            if args.tta_steps > 0:
-                with torch.no_grad():
-                    if args.lora_encoder == 'prompt':
-                        model.reset() #for promptlearner class
-                    else:
-                        model.LoRA_reset()
-            optimizer.load_state_dict(optim_state)
+            if args.ensemble == False:
+                if args.tta_steps > 0:
+                    with torch.no_grad():
+                        if args.lora_encoder == 'prompt':
+                            model.reset() #for promptlearner class
+                        else:
+                            model.LoRA_reset()
+            if optimizer != None:
+                optimizer.load_state_dict(optim_state)
+            
             if args.aug == False:
                 test_time_tuning(model, images, optimizer, scaler, args) #FIXME: The proposed test-time prompt tuning
             #--
@@ -582,7 +600,7 @@ def test_time_adapt_eval(val_loader, model, model_state, optimizer, optim_state,
 
 if __name__ == '__main__':
     default_data_root = '/home/raza.imam/Documents/TPT/datasets/'
-    default_test_sets = 'flower102/DTD/Pets/Cars' #'A/V/R/K' #flower102/DTD/Pets/UCF101/Caltech101/Aircraft/eurosat/Cars/Food101/SUN397
+    default_test_sets = 'A' #'A/V/R/K' #flower102/DTD/Pets/UCF101/Caltech101/Aircraft/eurosat/Cars/Food101/SUN397
     default_arch = 'ViT-B/16' #ViT-B/16 #RN50
     default_bs = 64
     default_ctx_init = 'a_photo_of_a' 
@@ -590,8 +608,10 @@ if __name__ == '__main__':
     default_tta_steps = 1
     default_print_frq = 10
     default_images_per_class = None
-    default_gpu = 0
+    default_gpu = 1
     default_selection_p = 0.1 #0.1=6. 1.0=64
+    default_ensemble = False
+    
     default_layer_range = [9, 11]
     default_init_method = 'xavier'
     default_lora_encoder = 'prompt'
@@ -619,12 +639,13 @@ if __name__ == '__main__':
     parser.add_argument('--cocoop', action='store_true', default=False, help="use cocoop's output as prompt initialization")
     parser.add_argument('--load', default=None, type=str, help='path to a pre-trained coop/cocoop')
     parser.add_argument('--seed', type=int, default=0) #No modify need
+    parser.add_argument('--ensemble', default=default_ensemble, choices=[True, False], help='Apply ensemble of prompts or not')
     
     parser.add_argument('--images_per_class', default=default_images_per_class, type=int, help='Number fo images per class to load (should be <=10)')
     parser.add_argument('--layer_range', nargs=2, type=int, default=default_layer_range, help='inclusive range of layers to include for lora_A and lora_B. Default is [0, 11].')
     parser.add_argument('--init_method', default=default_init_method, choices=['xavier', 'gaussian', 'kaiming', None], help='Initialization method for LoRA weights (None=in_built xavier)')
     parser.add_argument('--lora_encoder', default=default_lora_encoder, choices=['text', 'image', 'prompt'], help='Which encoder to apply LoRA on (text or image), not both for now')
-    parser.add_argument('--aug', default=default_aug, choices=[True, False], help='Whether to use simple augmentation or not')
+    parser.add_argument('--aug', default=default_aug, choices=[True, False], help='Whether to use simple augmentation or not (without training the model)')
     parser.add_argument('--majority_vote', default=default_majority_vote, choices=[True, False], help='Whether to use majority vote or not during augmentation')
     parser.add_argument('--double_aug', default=default_double_aug, choices=[True, False], help='Whether to use double-step in the augmentation or not')
     parser.add_argument('--test_aug', default=default_test_aug, choices=[True, False], help='Whether to use augmented sample predictions for inferencing trained model or not')

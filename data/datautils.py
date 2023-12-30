@@ -132,7 +132,7 @@ class AugMixAugmenter(object):
         self.preprocess = preprocess
         self.n_views = n_views
         if augmix:
-            self.aug_list = augmentations.augmentations
+            self.aug_list = augmentations.augmentations_all
         else:
             self.aug_list = []
         self.severity = severity
