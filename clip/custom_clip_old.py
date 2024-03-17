@@ -407,27 +407,105 @@ class ClipTestTimeTuning(nn.Module):
         text_features = torch.stack(text_features, dim=0)
         return torch.mean(text_features, dim=0)
 
-    def inference(self, image):
+    def inference(self, image, coeff=None, filter_ids=None):
         with torch.no_grad():
             image_features = self.image_encoder(image.type(self.dtype))
 
         self.text_features = self.get_text_features()
         self.image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         
+        if coeff is not None:
+            if self.image_features.size(0) != coeff.size(0):
+                self.image_features = self.image_features[filter_ids]
+            self.image_features = self.image_features * coeff.view(-1, 1)
+            self.image_features = self.image_features.mean(dim=0, keepdim=True)
+        
         logit_scale = self.logit_scale.exp()
         logits = logit_scale * self.image_features @ self.text_features.t()
+        # temperature = 2.0
+        # logits = logit_scale * (self.image_features @ self.text_features.t()) / temperature
         #logits here is the score between prompts embeddings and the image feature
         #scaled logits (n_samples, n_samples) (b_size, b_size)
         return logits 
+    
+    def Sinkhorn(self, K, u, v):
+        """
+        K: The cost matrix representing the pairwise distances between elements of the source and target distributions.
+        u: The initial weights for the source distribution.
+        v: The initial weights for the target distribution.        
+        """
+        max_iter = 100
+        r = torch.ones_like(u)
+        c = torch.ones_like(v)
+        thresh = 1e-2
+        for i in range(max_iter):
+            r0 = r
+            r = u / torch.matmul(K, c.unsqueeze(-1)).squeeze(-1)
+            c = v / torch.matmul(K.permute(0, 2, 1).contiguous(), r.unsqueeze(-1)).squeeze(-1)
+            err = (r - r0).abs().mean()
+            if err.item() < thresh:
+                break
 
-    def forward(self, input):
+        T = torch.matmul(r.unsqueeze(-1), c.unsqueeze(-2)) * K
+
+        return T
+    
+    
+    
+    def plot_inference(self, image): 
+        b = image.shape[0] # batch size
+        image_features = self.image_encoder(image.type(self.dtype))
+        image_feature_pool = image_features[0] # CLS token: image_feature_pool.shape = torch.Size([128, 1024])
+        image_features = image_features[1:]  # patch tokens: image_features.shape = torch.Size([49, 128, 1024])
+        M = image_features.shape[0] # M = 49 = Number of img patches
+        self.d = image_features.shape[-1] # d = 1024 # dimension of the each patch embedding
+
+        text_features = self.get_text_features()
+        N= 1 # No. of trainable prompts (1 in TPT)
+        n_cls = text_features.shape[0]
+        text_features =  text_features.contiguous().view(N, n_cls, self.d)  # torch.Size([4, 200, 1024])
+        text_feature_pool = text_features.mean(dim=0) # torch.Size([200, 1024])
+        
+        image_features =  F.normalize(image_features, dim=2) 
+        image_feature_pool = F.normalize(image_feature_pool, dim=1)
+        text_features = F.normalize(text_features, dim=2)
+        text_feature_pool = F.normalize(text_feature_pool, dim=1)
+
+        sim = torch.einsum('mbd,ncd->mnbc', image_features, text_features).contiguous() # shape = (M,N,batch_size,self.n_cls) = torch.Size([49, 4, 128, 200])
+        sim = sim.view(M,N,b*n_cls) # shape = (M,N,batch_size*self.n_cls) = torch.Size([49, 4, 25600])
+        sim = sim.permute(2,0,1) # shape = (batch_size*self.n_cls,M,N) = torch.Size([25600, 49, 4])
+        wdist = 1.0 - sim # same shape as sim torch.Size([25600, 49, 4])
+        xx=torch.zeros(b*n_cls, M, dtype=sim.dtype, device=sim.device).fill_(1. / M) #intialize uniform distribution #shape = (batch_size*self.n_cls,M) = torch.Size([25600, 49])
+        yy=torch.zeros(b*n_cls, N, dtype=sim.dtype, device=sim.device).fill_(1. / N) #intialize uniform distribution #shape = (batch_size*self.n_cls,N) = torch.Size([25600, 4])
+
+        self.eps = 0.1
+        with torch.no_grad():
+            KK = torch.exp(-wdist / self.eps) # torch.Size([25600, 49, 4])
+            T = self.Sinkhorn(KK,xx,yy) # torch.Size([25600, 49, 4])
+        if torch.isnan(T).any():
+            return None
+
+        sim_op = torch.sum(T * sim, dim=(1, 2)) # torch.Size([25600])
+        sim_op = sim_op.contiguous().view(b,n_cls) # torch.Size([128, 200])
+        
+        logit_scale = self.logit_scale.exp() # 100.0
+        logits = logit_scale * image_feature_pool @ text_feature_pool.t() # torch.Size([128, 200])
+        logits2 = logit_scale * sim_op # torch.Size([128, 200])
+        # if self.dataset == "ImageNet":
+        # logits2 = (logits2 + logits) # torch.Size([128, 200])
+        return logits2 # torch.Size([128, 200])
+        # return logits
+        
+
+    def forward(self, input, coeff=None, filter_ids=None):
         if isinstance(input, Tuple):
             view_0, view_1, view_2 = input
             return self.contrast_prompt_tuning(view_0, view_1, view_2)
         elif len(input.size()) == 2:
             return self.directional_prompt_tuning(input)
         else:
-            return self.inference(input)
+            return self.inference(input, coeff, filter_ids)
+            # return self.plot_inference(input)
 
 
 def get_coop(clip_arch, test_set, device, n_ctx, ctx_init, learned_cls=False):

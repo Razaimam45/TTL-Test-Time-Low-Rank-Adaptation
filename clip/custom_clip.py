@@ -161,6 +161,8 @@ class LoRA_AB:
         elif self.init_method == 'kaiming':
             init_function = init.kaiming_normal_
             print("Initializing LoRA A and B weights with Kaiming")
+        elif self.init_method == 'pretrained':
+            init_function = None
         else:
             raise ValueError(f"Unsupported init_method: {self.init_method}")
 
@@ -176,18 +178,25 @@ class LoRA_AB:
         lora_B_q_weights = layer.self_attn.q_proj.lora_B.default.weight
         lora_A_v_weights = layer.self_attn.v_proj.lora_A.default.weight
         lora_B_v_weights = layer.self_attn.v_proj.lora_B.default.weight
+        # lora_A_k_weights = layer.self_attn.k_proj.lora_A.default.weight
+        # lora_B_k_weights = layer.self_attn.k_proj.lora_B.default.weight
 
-        if self.init_method != None: #None bcoz, the weights are already initialized with Xavier
+        if self.init_method != (None or 'pretrained'): #None bcoz, the weights are already initialized with Xavier
             init_function(lora_A_q_weights) #Initializing the weights of A matrices only
             # init_function(lora_B_q_weights) #Not initializing B, bcoz they are already 0
             init_function(lora_A_v_weights)
             # init_function(lora_B_v_weights)
+            # init_function(lora_A_k_weights)
+        else:
+            print("Saving the initial pretrained weights")
 
         self.init_weights.append((
             lora_A_q_weights.detach().clone(),
             lora_B_q_weights.detach().clone(),
             lora_A_v_weights.detach().clone(),
-            lora_B_v_weights.detach().clone()
+            lora_B_v_weights.detach().clone(),
+            # lora_A_k_weights.detach().clone(),
+            # lora_B_k_weights.detach().clone(),
         ))
 
     def reset(self):
@@ -204,6 +213,8 @@ class LoRA_AB:
                 layer.self_attn.q_proj.lora_B.default.weight.data.copy_(init_weight_q_B)
                 layer.self_attn.v_proj.lora_A.default.weight.data.copy_(init_weight_v_A)
                 layer.self_attn.v_proj.lora_B.default.weight.data.copy_(init_weight_v_B)
+                # layer.self_attn.k_proj.lora_A.default.weight.data.copy_(init_weight_k_A)
+                # layer.self_attn.k_proj.lora_B.default.weight.data.copy_(init_weight_k_B)
 
 
 
@@ -308,7 +319,7 @@ class PromptLearner(nn.Module):
         # These token vectors will be saved when in save_model(),
         # but they should be ignored in load_model() as we want to use
         # those computed using the current class names
-        self.register_buffer("token_prefix", embedding[:, :1, :])  # SOS (start of sentence token)
+        self.register_buffer("token_prefix", embedding[:, :1,:])  # SOS (start of sentence token)
         if self.learned_cls:
             self.register_buffer("token_suffix", embedding[:, 1 + n_ctx + 1:, :])  # ..., EOS (class name token/s and end of sentence tokens)
         else:
@@ -453,11 +464,109 @@ class PromptLearner(nn.Module):
             raise ValueError
 
         return prompts #retunr the prompts now. (n_classes, SOS + n_ctx + CLS + *, 512)
+    
+    
+class PromptExtractor(nn.Module):
+    def __init__(self, n_ctx, ctx_init, classnames, clip_model):
+        super().__init__()
+        n_ctx = n_ctx
+        ctx_init = ctx_init
+        dtype = clip_model.dtype
+        # ctx_dim = clip_model.ln_final.weight.shape[0]
+        # Default is 1, which is compound shallow prompting
+
+        if ctx_init and (n_ctx) <= 4:
+            # use given words to initialize context vectors
+            ctx_init = ctx_init.replace("_", " ")
+            prompt = tokenize(ctx_init)
+            with torch.no_grad():
+                embedding = clip_model.get_text_features(prompt.to(clip_model.device)).type(dtype)
+            prompt_prefix = ctx_init
+            
+        else:
+            # random initialization
+            prompt_prefix = " ".join(["X"] * n_ctx)
+            print(prompt_prefix)
+        self.prompt_prefix = prompt_prefix
+            
+        print('MaPLe design: Multi-modal Prompt Learning')
+        print(f'Initial context: "{prompt_prefix}"')
+        print(f"Number of MaPLe context words (tokens): {n_ctx}")
+        # These below, related to the shallow prompts
+        # Linear layer so that the tokens will project to 512 and will be initialized from 768
+        # self.proj = nn.Linear(ctx_dim, 768)
+        # self.proj.half()
+        # These below parameters related to the shared prompts
+        # Define the compound prompts for the deeper layers
+
+        classnames = [name.replace("_", " ") for name in classnames]
+        name_lens = [len(_tokenizer.encode(name)) for name in classnames]
+        prompts = [prompt_prefix + " " + name + "." for name in classnames]
+
+        tokenized_prompts = torch.cat([tokenize(p) for p in prompts])  # (n_cls, n_tkn)
+        with torch.no_grad():
+            embedding = clip_model.get_text_features(tokenized_prompts.to(clip_model.device)).type(dtype)
+
+        # These token vectors will be saved when in save_model(),
+        # but they should be ignored in load_model() as we want to use
+        # those computed using the current class names
+        self.register_buffer("token_prefix", embedding)  # SOS
+
+        # self.n_cls = n_cls
+        # self.n_ctx = n_ctx
+        self.tokenized_prompts = tokenized_prompts  # torch.Tensor
+        self.name_lens = name_lens
+
+    def construct_prompts(self, prefix, label=None):
+        # dim0 is either batch_size (during training) or n_cls (during testing)
+        # ctx: context tokens, with shape of (dim0, n_ctx, ctx_dim)
+        # prefix: the sos token, with shape of (n_cls, 1, ctx_dim)
+        # suffix: remaining tokens, with shape of (n_cls, *, ctx_dim)
+        # print(prefix.shape)
+
+        if label is not None:
+            prefix = prefix[label]
+        # print(prefix.shape)
+        prompts = torch.cat(
+            [
+                prefix,  # (dim0, 1, dim)
+            ],
+            dim=1,
+        )
+        # print(prompts.shape)
+        return prompts
+
+    def forward(self):
+
+        prefix = self.token_prefix
+        prompts = self.construct_prompts(prefix)
+        # print(prompts.shape)
+        return prompts  
+    
+    def reset_classnames(self, classnames, clip_model):
+        #similar to code above.
+        self.n_cls = len(classnames) #number of classes
+        classnames = [name.replace("_", " ") for name in classnames]
+        name_lens = [len(_tokenizer.encode(name)) for name in classnames]
+        prompts = [self.prompt_prefix + " " + name + "." for name in classnames]
+            
+        tokenized_prompts = torch.cat([tokenize(p) for p in prompts]).to(clip_model.device)
+
+        #get clip model
+
+        with torch.no_grad():
+            embedding = clip_model.text_encoder.get_text_features(tokenized_prompts).type(clip_model.text_encoder.dtype)
+ 
+        self.token_prefix = embedding
+
+        self.name_lens = name_lens
+        self.tokenized_prompts = tokenized_prompts
+        self.classnames = classnames 
 
 # Raza
-from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, TaskType
+from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, TaskType #https://medium.com/@manyi.yim/more-about-loraconfig-from-peft-581cf54643db
 lora_config = LoraConfig(
- r=4,
+ r=16,
  lora_alpha=32,
  target_modules=["q_proj", "v_proj"],
  lora_dropout=0.05,
@@ -465,6 +574,7 @@ lora_config = LoraConfig(
 #  task_type=TaskType.FEATURE_EXTRACTION
  task_type="a_random_string",
 #  init_lora_weights="xavier_uniform"
+# use_rslora=True
 )
 lora_config.inferece_mode = False
 
@@ -472,7 +582,7 @@ from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel
 
 class ClipTestTimeTuning(nn.Module):
     def __init__(self, device, classnames, batch_size, criterion='cosine', 
-                 arch="ViT-L/14", n_ctx=16, ctx_init=None, ctx_position='end', 
+                 arch="ViT-B/16", n_ctx=16, ctx_init=None, ctx_position='end', 
                  learned_cls=False, layer_range=[0, 11], init_method=None, lora_encoder='text'):
         
         super(ClipTestTimeTuning, self).__init__()
@@ -481,6 +591,7 @@ class ClipTestTimeTuning(nn.Module):
         #load original clip model
         clip, _, _ = load(arch, device=self.device, download_root=DOWNLOAD_ROOT)
         clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16").to(device)
+        
         
         # print([n for n, _ in clip.named_children()])
         # ['visual', 'transformer', 'token_embedding', 'ln_final']
@@ -513,17 +624,23 @@ class ClipTestTimeTuning(nn.Module):
             print("Fine-tuning Prompt Learner, applying LoRA")
 
 
-        #take the logit scale (learnable) from original CLIP.
-        self.logit_scale = clip.logit_scale.data
-        # prepare prompt.
-        self.prompt_learner = PromptLearner(clip, classnames, batch_size, n_ctx, ctx_init, ctx_position, learned_cls)
-        self.criterion = criterion
-        
         # initializing LoRA_AB for resetting A and B wts after every inference.
         if lora_encoder == 'image':
             self.LoRA_AB = LoRA_AB(self.image_encoder, layer_range=layer_range, init_method=init_method, lora_encoder=lora_encoder)
         if lora_encoder == 'text':
             self.LoRA_AB = LoRA_AB(self.text_encoder, layer_range=layer_range, init_method=init_method, lora_encoder=lora_encoder)
+            
+        #take the logit scale (learnable) from original CLIP.
+        self.logit_scale = clip_model.logit_scale.data
+        # prepare prompt.
+        self.prompt_learner = PromptLearner(clip, classnames, batch_size, n_ctx, ctx_init, ctx_position, learned_cls)
+        # self.prompt_learner = PromptExtractor(n_ctx, ctx_init, classnames, clip_model)
+        self.tokenized_prompts = self.prompt_learner.tokenized_prompts
+        self.criterion = criterion
+        
+        
+        # pretrained_state_dict = torch.load('/home/raza.imam/Documents/TPT/weights/output/imagenet/MaPLe/vit_b16_c2_ep5_batch4_2ctx_cross_datasets_16shots/seed1/MultiModalPromptLearner/model.pth.tar-2')
+        # model.load_state_dict(pretrained_state_dict['state_dict'])
     
     def get_model(self):
         clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16").to(self.device)
@@ -549,17 +666,18 @@ class ClipTestTimeTuning(nn.Module):
     def get_text_features(self):
         # clip_model = self.get_model()
         text_features = []
-        prompts = self.prompt_learner()
+        # prompts = self.prompt_learner()
         tokenized_prompts = self.prompt_learner.tokenized_prompts
         # t_features = self.text_encoder(prompts, tokenized_prompts)
         # t_features = clip_model.get_text_features(tokenized_prompts)
         t_features = self.text_encoder(tokenized_prompts)
+        # t_features = self.prompt_learner()
         
         text_features.append(t_features / t_features.norm(dim=-1, keepdim=True))
         text_features = torch.stack(text_features, dim=0)
         return torch.mean(text_features, dim=0)
 
-    def inference(self, image):
+    def inference(self, image, label=None, coeff=None):
         # clip_model = self.get_model().requires_grad_(True)
         with torch.no_grad():
             # image_features = self.image_encoder(image.type(self.dtype))
@@ -573,23 +691,31 @@ class ClipTestTimeTuning(nn.Module):
             image_features = self.image_encoder(image)
         elif self.lora_encoder == 'text': # When 'text', text features are computed with grad enabled
             self.text_features = self.get_text_features()
-            
+                        
         self.image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        
+        if coeff is not None:
+            self.image_features = self.image_features * coeff.view(-1, 1)
+            self.image_features = self.image_features.mean(dim=0, keepdim=True)
         
         logit_scale = self.logit_scale.exp()
         logits = logit_scale * self.image_features @ self.text_features.t()
         #logits here is the score between prompts embeddings and the image feature
         #scaled logits (n_samples, n_samples) (b_size, b_size)
+        
+        if self.prompt_learner.training:
+            return F.cross_entropy(logits,label)
+        
         return logits 
 
-    def forward(self, input):
+    def forward(self, input, label=None, coeff=None):
         if isinstance(input, Tuple):
             view_0, view_1, view_2 = input
             return self.contrast_prompt_tuning(view_0, view_1, view_2)
         elif len(input.size()) == 2:
             return self.directional_prompt_tuning(input)
         else:
-            return self.inference(input)
+            return self.inference(input, label, coeff)
 
 
 def get_coop(clip_arch, test_set, device, n_ctx, ctx_init, learned_cls=False, layer_range=[0, 11], init_method=None, lora_encoder='text'):
