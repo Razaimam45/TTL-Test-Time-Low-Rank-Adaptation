@@ -71,6 +71,7 @@ class AttentionPool2d(nn.Module):
         x = x + self.positional_embedding[:, None, :].to(x.dtype)  # (HW+1)NC
         x, _ = F.multi_head_attention_forward(
             query=x[:1], key=x, value=x,
+            # query=x, key=x, value=x,
             embed_dim_to_check=x.shape[-1],
             num_heads=self.num_heads,
             q_proj_weight=self.q_proj.weight,
@@ -89,6 +90,7 @@ class AttentionPool2d(nn.Module):
             need_weights=False
         )
         return x.squeeze(0)
+        # return x
 
 
 class ModifiedResNet(nn.Module):
@@ -191,12 +193,19 @@ class ResidualAttentionBlock(nn.Module):
         ]))
         self.ln_2 = LayerNorm(d_model)
         self.attn_mask = attn_mask
+        
+        self.visual_feature = torch.empty(0)
 
     def attention(self, x: torch.Tensor):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
     def forward(self, x: torch.Tensor):
+        if x.shape == torch.Size([197, 1, 768]):
+            self.visual_feat = x
+        # else:
+        #     self.textual_feat = x
+        
         x = x + self.attention(self.ln_1(x))
         x = x + self.mlp(self.ln_2(x))
         return x

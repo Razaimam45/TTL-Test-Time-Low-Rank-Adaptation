@@ -19,20 +19,20 @@ import data.augmix_ops as augmentations
 
 ID_to_DIRNAME={
     'I': 'ImageNet',
-    'A': 'imagenet-a',
+    'A': 'imagenet-adversarial/imagenet-a',
     'K': 'ImageNet-Sketch',
-    'R': 'imagenet-r', # filtered_images_resized / background_removal_ / imagenet-r
-    'V': 'imagenetv2-matched-frequency-format-val',
-    'flower102': 'flower102',
-    'dtd': 'DTD',
-    'pets': 'OxfordPets',
-    'cars': 'StanfordCars',
-    'ucf101': 'UCF101',
-    'caltech101': 'Caltech101',
-    'food101': 'Food101',
-    'sun397': 'SUN397',
+    'R': 'imagenet-rendition/imagenet-r', # filtered_images_resized / background_removal_ / imagenet-r
+    'V': 'imagenetv2/imagenetv2-matched-frequency-format-val',
+    'flower102': 'oxford_flowers',
+    'dtd': 'dtd',
+    'pets': 'oxford_pets/images',
+    'cars': 'stanford_cars',
+    'ucf101': 'ucf101/UCF-101-midframes',
+    'caltech101': 'caltech-101/101_ObjectCategories',
+    'food101': 'food-101',
+    'sun397': 'sun397/SUN397',
     'aircraft': 'fgvc_aircraft',
-    'eurosat': 'eurosat'
+    'eurosat': 'eurosat/2750',
 }
 
 def build_dataset(set_id, transform, args, attack_step=0, 
@@ -50,6 +50,7 @@ def build_dataset(set_id, transform, args, attack_step=0,
         #     testdir = os.path.join(args.data, ID_to_DIRNAME[set_id]+'-'+ args.attack_folder_name)
         # else: 
         testdir = os.path.join(args.data, ID_to_DIRNAME[set_id])
+        # testdir = "/home/raza.imam/Documents/TPT/datasets/ImageNet/Imagenet_1k/train"
         from data import filtered_dataset
         if args.images_per_class == None:
             testset = datasets.ImageFolder(testdir, transform=transform)
@@ -132,7 +133,7 @@ class AugMixAugmenter(object):
         self.preprocess = preprocess
         self.n_views = n_views
         if augmix:
-            self.aug_list = augmentations.augmentations_all
+            self.aug_list = [] #augmentations.augmentations
         else:
             self.aug_list = []
         self.severity = severity
