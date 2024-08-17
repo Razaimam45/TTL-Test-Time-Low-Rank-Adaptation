@@ -137,7 +137,7 @@ def main_worker(gpu, args):
             model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init)
         else:
             from clip.custom_clip import get_coop, LoRA_AB
-            model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init, layer_range=args.layer_range, init_method=args.init_method, lora_encoder=args.lora_encoder)
+            model = get_coop(args.arch, args.test_sets, args.gpu, args.n_ctx, args.ctx_init, layer_range=args.layer_range, init_method=args.init_method, lora_encoder=args.lora_encoder, rank=args.rank)
         
         print("Model loaded")
         model_state = None
@@ -402,7 +402,8 @@ if __name__ == '__main__':
     parser.add_argument('--layer_range', type=list_of_ints, default=default_layer_range, help='inclusive range of layers to include for lora_A and lora_B.')
     parser.add_argument('--init_method', default=default_init_method, choices=['xavier', 'gaussian', 'kaiming', 'pretrained', None], help='Initialization method for LoRA weights (None=in_built xavier)')
     parser.add_argument('--lora_encoder', default=default_lora_encoder, choices=['text', 'image', 'prompt'], help='Which encoder to apply LoRA on (text or image), not both for now')
-    
+    parser.add_argument('--rank', default=16, type=int, help='rank of the LoRA matrices')
+
     # Deyo args
     parser.add_argument('--deyo_selection', default=default_deyo_selection, help='Whether to use weighted deyo class')
     

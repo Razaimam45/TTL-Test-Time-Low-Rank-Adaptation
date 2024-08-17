@@ -565,25 +565,13 @@ class PromptExtractor(nn.Module):
 
 # Raza
 from peft import LoraConfig, get_peft_model, prepare_model_for_int8_training, TaskType #https://medium.com/@manyi.yim/more-about-loraconfig-from-peft-581cf54643db
-lora_config = LoraConfig(
- r=16,
- lora_alpha=32,
- target_modules=["q_proj", "v_proj"],
- lora_dropout=0.05,
- bias="none",
-#  task_type=TaskType.FEATURE_EXTRACTION
- task_type="a_random_string",
-#  init_lora_weights="xavier_uniform"
-# use_rslora=True
-)
-lora_config.inferece_mode = False
-
 from transformers import CLIPProcessor, CLIPModel, CLIPVisionModel
 
 class ClipTestTimeTuning(nn.Module):
     def __init__(self, device, classnames, batch_size, criterion='cosine', 
                  arch="ViT-B/16", n_ctx=16, ctx_init=None, ctx_position='end', 
-                 learned_cls=False, layer_range=[0, 11], init_method=None, lora_encoder='text'):
+                 learned_cls=False, layer_range=[9, 11], init_method=None, lora_encoder='text',
+                 rank=16):
         
         super(ClipTestTimeTuning, self).__init__()
         self.device = device
@@ -592,20 +580,17 @@ class ClipTestTimeTuning(nn.Module):
         clip, _, _ = load(arch, device=self.device, download_root=DOWNLOAD_ROOT)
         clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch16").to(device)
         
-        
-        # print([n for n, _ in clip.named_children()])
-        # ['visual', 'transformer', 'token_embedding', 'ln_final']
-        
-        #get the image encoder from original clip
-        # self.image_encoder = clip.visual
-        # self.image_encoder = clip_model.vision_model
+        lora_config = LoraConfig(
+            r=rank,
+            lora_alpha=32,
+            target_modules=["q_proj", "v_proj"],
+            lora_dropout=0.05,
+            bias="none",
+            task_type="a_random_string",
+        )
+        lora_config.inferece_mode = False
+
         self.image_encoder = VisionEncoder(clip_model)
-        # self.image_encoder = prepare_model_for_int8_training(self.image_encoder)
-        # self.image_encoder = get_peft_model(self.image_encoder, lora_config) 
-        # self.image_encoder = self.image_encoder.base_model.model
-        
-        #get text encoder (the modified one from the class here.)
-        # self.text_encoder = TextEncoder(clip)
         self.text_encoder = PromptEncoder(clip_model)
         
         if lora_encoder == 'image':
@@ -718,7 +703,7 @@ class ClipTestTimeTuning(nn.Module):
             return self.inference(input, label, coeff)
 
 
-def get_coop(clip_arch, test_set, device, n_ctx, ctx_init, learned_cls=False, layer_range=[0, 11], init_method=None, lora_encoder='text'):
+def get_coop(clip_arch, test_set, device, n_ctx, ctx_init, learned_cls=False, layer_range=[0, 11], init_method=None, lora_encoder='text', rank=16):
     #imagenet not in fewshot.
     if test_set in fewshot_datasets:
         classnames = eval("{}_classes".format(test_set.lower()))
