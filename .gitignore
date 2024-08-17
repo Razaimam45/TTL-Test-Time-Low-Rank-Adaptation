@@ -7,7 +7,6 @@
 *.txt
 *.out
 *.pt
-
 *.py[cod]
 *$py.class
 *.egg-info
