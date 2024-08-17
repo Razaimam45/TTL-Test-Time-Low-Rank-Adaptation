@@ -66,7 +66,7 @@ For cross-dataset generalization, we adopt the same train/val/test splits as CoO
 
 ## Run TTL
 
-We provide three bash scripts under `./scripts`. You can modify the paths and other args in the scripts.     
+We provide script to run *ttl.py* under `./scripts`. You can modify the paths and other args in the scripts.     
 
 An example to run TTL with LoRA initialization on out-of-distribution datasets:
 ```
@@ -79,7 +79,7 @@ Note that for simplicity, we use `set_id` to denote different datasets. A comple
 
 ### Main Results
 
-#### Qunatitative Results
+#### Quantitative Results
 
 <div align="center">
 
