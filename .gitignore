@@ -2,7 +2,6 @@
 .vscode/*
 *.pth.tar
 *.pth
-*.png 
 *.jpg 
 *.pdf 
 *.txt

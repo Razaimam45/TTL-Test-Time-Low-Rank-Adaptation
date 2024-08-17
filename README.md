@@ -6,7 +6,7 @@ This repository provides the official PyTorch implementation of our TTL paper:
 > Authors: *Raza Imam, Hanan Gani, Muhammad Huzaifa, Karthik Nandakumar*  
 
 <p align = "center">
-<img src = "./utils/Overview_method.png">
+<img src = "utils/Overview_method.png">
 </p>
 <p align = "center">
 Our proposed TTL vs. Existing zero-shot optimization methods.
@@ -102,7 +102,7 @@ Note that for simplicity, we use `set_id` to denote different datasets. A comple
 **TTL** outperforms various *prompt*-tuning methods in **strict zero-shot** scenarios, including text, visual, and multi-modal prompts. While text *prompt*-tuning like TPT improves zero-shot adaptation, visual and multi-modal methods often underperform without pre-training. Even though PromptAlign shows potential when pre-trained, it struggles without it, reducing its effectiveness in real-world zero-shot tasks. **TTL** excels across all these approaches, achieving better performance without relying on any sort of pre-training.
 
 <p align = "center">
-<img src = "./utils/Qualitative_results.png">
+<img src = "utils/Qualitative_results.png">
 </p>
 <p align = "center">
 At test-time, TTL produces linearly separable features for zero-shot generalization than existing baselines like TPT, and PromptAlign.
