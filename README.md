@@ -111,7 +111,7 @@ Note that for simplicity, we use `set_id` to denote different datasets. A comple
 <img src = "utils/Qualitative_results.png">
 </p>
 <p align = "center">
-At test-time, TTL produces linearly separable features for zero-shot generalization than existing baselines like TPT, and PromptAlign.
+At test time, TTL produces linearly separable features for zero-shot generalization compared to existing baselines like TPT and PromptAlign.
 </p>
 
 
