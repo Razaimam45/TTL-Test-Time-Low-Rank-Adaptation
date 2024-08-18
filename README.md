@@ -1,4 +1,10 @@
-<Test-Time Low Rank Adaptation via Confidence Maximization for Zero-Shot Generalization of ision-Language Models>
+# Test-Time Low Rank Adaptation via Confidence Maximization for Zero-Shot Generalization of ision-Language Models
+
+[Raza Imam](https://razaimam45.github.io/), [Hanan Gani](https://hananshafi.github.io/), [Muhammad Huazaifa](https://muhammad-huzaifaa.github.io/), [Karthik Nandakumar](https://www.sprintai.org/nkarthik)
+
+Mohamed Bin Zayed University of Artificial Intelligence
+
+%<Test-Time Low Rank Adaptation via Confidence Maximization for Zero-Shot Generalization of ision-Language Models>
 
 This repository provides the official PyTorch implementation of our TTL paper:    
 
