@@ -4,6 +4,8 @@
 
 Mohamed Bin Zayed University of Artificial Intelligence
 
+[![paper](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/pdf/2407.15913)
+
 This repository provides the official PyTorch implementation of our TTL paper:    
 
 > Test-Time Low Rank Adaptation via Confidence Maximization for Zero-Shot Generalization of Vision-Language Models      
