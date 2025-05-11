@@ -118,14 +118,13 @@ At test time, TTL produces linearly separable features for zero-shot generalizat
 ## Citation
 If you find our code useful or our work relevant, please consider citing: 
 ```
-@misc{imam2024testtimelowrankadaptation,
-      title={Test-Time Low Rank Adaptation via Confidence Maximization for Zero-Shot Generalization of Vision-Language Models}, 
-      author={Raza Imam and Hanan Gani and Muhammad Huzaifa and Karthik Nandakumar},
-      year={2024},
-      eprint={2407.15913},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2407.15913}, 
+@inproceedings{imam2025test,
+  title={Test-time low rank adaptation via confidence maximization for zero-shot generalization of vision-language models},
+  author={Imam, Raza and Gani, Hanan and Huzaifa, Muhammad and Nandakumar, Karthik},
+  booktitle={2025 IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)},
+  pages={5449--5459},
+  year={2025},
+  organization={IEEE}
 }
 ```
 
